@@ -1,227 +1,95 @@
 package com.stand.hypnosis
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
-import android.animation.ValueAnimator
-import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Paint
 import android.os.Bundle
-import android.view.View
-import android.view.View.LAYER_TYPE_HARDWARE
-import android.view.ViewGroup
-import android.view.animation.LinearInterpolator
-import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.core.graphics.toColorInt
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private val scope = MainScope()
-    private val activeAnimators = mutableListOf<ValueAnimator>()
-    private lateinit var rootLayout: FrameLayout
-    private var centerX: Float = 0f
-    private var centerY: Float = 0f
-    private var maxRadius: Float = 0f
-    private var baseStroke: Float = 50f
+    private var isBeating by mutableStateOf(true)
+    private var isFullScreen by mutableStateOf(true)
+    private var ringColor by mutableIntStateOf("#EF36CD".toColorInt())
+    private var bgColor by mutableIntStateOf("#FFFFFF".toColorInt())
+    private lateinit var configManager: ConfigManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
+        initConfig() // 初始化配置
+        /* ---------- Compose UI ---------- */
+        toggleFullScreen(isFullScreen)
         setContent {
-            Scaffold(modifier = Modifier.fillMaxSize(),
-                containerColor = Color.Transparent) { innerPadding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    BeatingHeart()
+            MyAppTheme{
+                Scaffold(
+                    modifier = Modifier.fillMaxSize().background(Color(bgColor)),
+                    containerColor = Color.Transparent,
+                ) { inner ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(inner),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // 修改点1：将圆环动画改为Compose实现，并放在heart下面
+                        RingAnimation(color=Color(ringColor))
+                        BeatingHeart(isBeating)
+                    }
+                    TopSwipeDrawerLayer(
+                        configManager = configManager,
+                        onConfigUpdate = {
+                            isBeating = configManager.isBeating
+                            bgColor = configManager.bgColor
+                            ringColor = configManager.ringColor
+                            if (isFullScreen != configManager.isFullScreen) {
+                                isFullScreen = configManager.isFullScreen
+                                toggleFullScreen(isFullScreen)
+                            }
+                        })
                 }
             }
         }
+    }
 
-        rootLayout = FrameLayout(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+    fun initConfig() {
+        // 初始化配置管理器
+        configManager = ConfigManager.getInstance(this)
+
+        // 从持久化配置加载初始值
+        lifecycleScope.launch {
+            isBeating = configManager.isBeating
+            ringColor = configManager.ringColor
+            bgColor = configManager.bgColor
+            isFullScreen = configManager.isFullScreen
         }
-        findViewById<ViewGroup>(android.R.id.content).addView(rootLayout, 0)
-
-        // 3. 获取屏幕尺寸并计算动画参数
-        val displayMetrics = resources.displayMetrics
-        centerX = displayMetrics.widthPixels / 2f
-        centerY = displayMetrics.heightPixels / 2f
-        // 适配宽屏
-        maxRadius = (maxOf(displayMetrics.heightPixels, displayMetrics.widthPixels) + 200f) / 2f
-
-        // 开始无限循环创建圆形动画
-        startInfiniteCircleAnimation()
     }
 
-    @Composable
-    fun BeatingHeart() {
-        val infiniteTransition = rememberInfiniteTransition()
-        val scale by infiniteTransition.animateFloat(
-            initialValue = 1f,
-            targetValue = 0.8f,
-            animationSpec = infiniteRepeatable(
-                animation = keyframes {
-                    durationMillis = 1000
-                    0.8f at 500 // 在500ms时缩小到0.8
-                    1f at 1000 // 在1000ms时恢复到1
-                },
-                repeatMode = RepeatMode.Restart
-            )
-        )
+    // 添加全屏切换方法
+    private fun toggleFullScreen(isFullScreen: Boolean) {
+        // 始终让内容延伸到系统栏区域
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        Image(
-            painter = painterResource(id = R.drawable.heart),
-            contentDescription = null,
-            modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .aspectRatio(1f)
-                .scale(scale)
-        )
-    }
-
-    private fun startInfiniteCircleAnimation() {
-        scope.launch {
-            val totalCircles = 10
-            repeat(totalCircles) { i ->
-                launch {
-                    createPreCreatedCircle(i, totalCircles)
-                }
-            }
-
-            while (true) {
-                launch {
-                    createCircleAnimation()
-                }
-                delay(200)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            if (isFullScreen) {
+                // 全屏模式：隐藏系统栏
+                hide(WindowInsetsCompat.Type.systemBars())
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                // 非全屏模式：显示系统栏
+                show(WindowInsetsCompat.Type.systemBars())
             }
         }
-    }
-
-    private fun createPreCreatedCircle(index: Int, totalCircles: Int) {
-        val progress = index.toFloat() / totalCircles
-        val initialRadius = maxRadius * progress
-        val remainingDuration = (2000 * (1 - progress)).toLong()
-
-        createCircleAnimation(
-            initialRadius = initialRadius,
-            maxRadius = maxRadius,
-            duration = remainingDuration
-        )
-    }
-
-    private fun createCircleAnimation() {
-        createCircleAnimation(
-            initialRadius = 0f,
-            maxRadius = maxRadius,
-            duration = 2000L
-        )
-    }
-
-    private fun createCircleAnimation(initialRadius: Float, maxRadius: Float, duration: Long) {
-        // 从对象池获取CircleView
-        val circleView = CircleView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            setLayerType(LAYER_TYPE_HARDWARE, null) // 启用硬件加速
-        }
-
-        circleView.setCenter(centerX, centerY)
-        circleView.setRadius(initialRadius)
-        rootLayout.addView(circleView)
-
-        ValueAnimator.ofFloat(initialRadius, maxRadius).apply {
-            this.duration = duration
-            interpolator = LinearInterpolator()
-
-            addUpdateListener { animation ->
-                val radius = animation.animatedValue as Float
-                circleView.setRadius(radius + radius / maxRadius * 50f)
-                circleView.setStroke(baseStroke * (1 + radius / maxRadius))
-                circleView.invalidate()
-            }
-
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    rootLayout.removeView(circleView)
-                    activeAnimators.remove(animation as ValueAnimator)
-                }
-            })
-
-            start()
-            activeAnimators.add(this)
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        scope.cancel() // 取消协程
-        activeAnimators.forEach { it.cancel() } // 取消所有动画
-        rootLayout.removeAllViews() // 清理所有View
-    }
-}
-
-// 自定义圆形View
-class CircleView(context: Context) : View(context) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = "#EF36CD".toColorInt() // 紫色描边
-        strokeWidth = 50f
-        strokeCap = Paint.Cap.ROUND
-    }
-
-    private var radius: Float = 0f
-    private var centerX: Float = 0f
-    private var centerY: Float = 0f
-
-    fun setRadius(radius: Float) {
-        this.radius = radius
-    }
-
-    fun setCenter(x: Float, y: Float) {
-        this.centerX = x
-        this.centerY = y
-    }
-
-    fun setStroke(stroke: Float) {
-        paint.strokeWidth = stroke
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        canvas.drawCircle(centerX, centerY, radius, paint)
     }
 }

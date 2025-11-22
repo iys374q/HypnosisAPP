@@ -12,3 +12,6 @@ out/
 
 # Local environment
 local.properties
+
+# Others
+.kotlin/

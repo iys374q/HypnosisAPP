@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.core.graphics.toColorInt
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -52,10 +54,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        hideSystemUI()
 
         setContent {
-            Scaffold(modifier = Modifier.fillMaxSize(),
-                containerColor = Color.Transparent) { innerPadding ->
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent
+            ) { innerPadding ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -187,11 +192,31 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun hideSystemUI() {
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+
+        controller.hide(
+            WindowInsetsCompat.Type.statusBars() or
+                    WindowInsetsCompat.Type.navigationBars()
+        )
+
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    }
+
+
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel() // 取消协程
         activeAnimators.forEach { it.cancel() } // 取消所有动画
         rootLayout.removeAllViews() // 清理所有View
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideSystemUI()
+        }
     }
 }
 
